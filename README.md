@@ -27,6 +27,8 @@ Install dependencies with: `'pip install -r requirements.txt'`
 
 The code will select a single non-contrast chest series per study that is most suitable for our CAC model using DICOM metadata. The script internally creates a metadata table across all the suitable imaging series, where each row represents a single DICOM file from a selected series, and has the following columns: `StudyName, DICOMFilePath, AxialPosition`. This table will be used by the inference code to run the model on each slice/DICOM file from the series and aggregate the results into a CAC score.
 
+Addendum: This model was designed to run on non-ECG gated non-contrast chest CT scans and expects full FOV series. If you attempt to use it on a gated CT scan, filter the input to the full FOV series, and keep in mind it was not directly trained on gated slices.
+
 ## Citation
 
 Please cite our NEJM AI paper: [doi.org/10.1056/AIoa2400937](https://doi.org/10.1056/AIoa2400937)
