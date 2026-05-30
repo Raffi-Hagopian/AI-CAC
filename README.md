@@ -10,7 +10,20 @@ This repository contains:
 
 ## Requirements
 
-Install dependencies with: `'pip install -r requirements.txt'`
+If you don't have `pyenv` already, get it [here](https://github.com/pyenv/pyenv).
+Then navigate to the root directory of this project and set up the environment as follows:
+```
+pyenv install 3.9.19
+pyenv virtualenv 3.9.19 ai-cac
+pyenv local ai-cac
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+If you get `undefined symbol` errors when trying to run `main_inference.py`,
+it is possible that `torch` is attempting to access libraries from a different version
+of `python` (e.g. `3.12`). Inspect your environment closely, including the
+`PYTHONPATH` variable.
 
 ## Instructions for Inference (running AI-CAC scoring on non-gated, non-contrast chest CTs)
 
