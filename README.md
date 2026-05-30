@@ -13,10 +13,9 @@ This repository contains:
 If you don't have `pyenv` already, get it [here](https://github.com/pyenv/pyenv).
 Then navigate to the root directory of this project and set up the environment as follows:
 ```
-sudo apt-get install libreadline-dev libsqlite3-dev
 pyenv install 3.9.19
 pyenv virtualenv 3.9.19 ai-cac
-pyenv activate ai-cac
+pyenv local ai-cac
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
