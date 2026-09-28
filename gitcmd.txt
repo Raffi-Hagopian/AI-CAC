@@ -1,3 +1,0 @@
-git remote add origin https://github.com/Ellumen/VA-AI-CAC.git
-git config --global user.name "toddmccolloughellumen"
-git config --global user.email "tmccollough@ellumen.com"
