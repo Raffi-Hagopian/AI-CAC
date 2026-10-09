@@ -36,20 +36,47 @@ def extract_dicom_attributes(dicom_file):
 # Create Pandas dataframe of StudyName, DICOMFilePath, and DICOM Attributes 
 def create_dicom_df(root_dir):
     data = []
-    for study_name in os.listdir(root_dir):
-        study_path = os.path.join(root_dir, study_name)
-        if os.path.isdir(study_path):
-            for parent_path, _, files in os.walk(study_path):
-                for file_name in files:
-                    if file_name.lower().endswith('.dcm'):
-                        dicom_path = os.path.join(parent_path, file_name)
-                        dicom_attr = extract_dicom_attributes(dicom_path)
-                        row = {
-                            'StudyName': study_name,
-                            'DICOMFilePath': dicom_path, 
-                            **dicom_attr,
-                        }
-                        data.append(row)
+    # If the provided path directly contains DICOM files, treat it as a single study
+    try:
+        entries = os.listdir(root_dir)
+    except Exception:
+        return pd.DataFrame(data)
+
+    has_dcm_files = any(
+        f.lower().endswith('.dcm') and os.path.isfile(os.path.join(root_dir, f))
+        for f in entries
+    )
+
+    if has_dcm_files:
+        study_name = os.path.basename(os.path.normpath(root_dir))
+        for parent_path, _, files in os.walk(root_dir):
+            for file_name in files:
+                if file_name.lower().endswith('.dcm'):
+                    dicom_path = os.path.join(parent_path, file_name)
+                    dicom_attr = extract_dicom_attributes(dicom_path)
+                    row = {
+                        'StudyName': study_name,
+                        'DICOMFilePath': dicom_path,
+                        **dicom_attr,
+                    }
+                    data.append(row)
+    else:
+        # Assume each top-level directory under root_dir is a study
+        for study_name in entries:
+            study_path = os.path.join(root_dir, study_name)
+            if os.path.isdir(study_path):
+                for parent_path, _, files in os.walk(study_path):
+                    for file_name in files:
+                        if file_name.lower().endswith('.dcm'):
+                            dicom_path = os.path.join(parent_path, file_name)
+                            dicom_attr = extract_dicom_attributes(dicom_path)
+                            row = {
+                                'StudyName': study_name,
+                                'DICOMFilePath': dicom_path,
+                                **dicom_attr,
+                            }
+                            data.append(row)
+
     df = pd.DataFrame(data)
     return df
 
@@ -66,16 +93,28 @@ def create_dicom_df(root_dir):
 def filter_dicom_df(dicom_df):
 
     def is_axial(orientation_list):
-        if orientation_list == None or orientation_list == 'None':
+        if orientation_list in (None, 'None'):
             return True
-        else:
+        try:
             orientation_list = ast.literal_eval(orientation_list)
-            int_list = [int(x) for x in orientation_list]
-            return int_list == [1,0,0,0,1,0] #Axial orientation
+            # normalize to integers (handle floats like -0.0 / -1.0)
+            int_list = [int(round(float(x))) for x in orientation_list]
+            if len(int_list) < 6:
+                return False
+            abs_list = [abs(x) for x in int_list[:6]]
+            # Accept axial orientation even if the direction is flipped (sign differences)
+            return abs_list == [1,0,0,0,1,0]
+        except Exception:
+            return False
     
     def keep_series(study_desc, series_desc, body_part): 
-        if study_desc == 'None' or series_desc == 'None' or study_desc == '' or series_desc == '':
-            return False 
+        # Allow missing StudyDescription as long as SeriesDescription is present
+        if (study_desc in ('None', '')) and (series_desc in ('None', '')):
+            # If both study and series descriptions are missing, allow the series
+            # if BodyPartExamined indicates chest/lung anatomy; otherwise skip.
+            if body_part in (None, 'None', ''):
+                return False
+            # otherwise continue and evaluate body_part below
         study_desc = study_desc.lower()
         series_desc = series_desc.lower()
         body_part = body_part.lower()
@@ -140,15 +179,46 @@ def filter_dicom_df(dicom_df):
 
     series_specific_columns = ['StudyName','StudyDescription','SeriesDescription', 'SliceThickness', 'ImageType', 'ConvolutionKernel', 'ImageOrientationPatient', 'KVP', 'ContrastBolusAgent', 'BodyPartExamined']
 
-    dicom_df = dicom_df[dicom_df['Modality'] == 'CT']
+    # Ensure expected columns exist to avoid KeyErrors during filtering/grouping
+    expected_cols = set(series_specific_columns + ['DICOMFilePath', 'SeriesInstanceUID', 'Modality', 'ImagePositionPatient', 'AcquisitionTime'])
+    for col in expected_cols:
+        if col not in dicom_df.columns:
+            dicom_df[col] = None
+
+    # Filter by modality if present; match case-insensitively and handle non-string values
+    if 'Modality' in dicom_df.columns:
+        dicom_df = dicom_df[dicom_df['Modality'].astype(str).str.upper() == 'CT']
+    else:
+        dicom_df = dicom_df.iloc[0:0]
     dicom_df['SliceThickness'] =  pd.to_numeric(dicom_df['SliceThickness'], errors='coerce')
-    dicom_df = dicom_df[(dicom_df['SliceThickness'] >= 2.5) & (dicom_df['SliceThickness'] <= 5)] # Keep DICOMs with SliceTHickness between 2.5 and 5
+    # Allow thinner-slice CTs (e.g., 0.625 mm) commonly found in LDCT datasets
+    dicom_df = dicom_df[(dicom_df['SliceThickness'] >= 0.5) & (dicom_df['SliceThickness'] <= 5)] # Keep DICOMs with SliceThickness between 0.5 and 5
     dicom_df.fillna('None', inplace = True) # Replace NA with string 'None'
     dicom_df = dicom_df.astype(str) # allows for grouping in certain columns 
+    # If dicom_df is empty after filtering, return an empty dataframe with expected columns
+    if dicom_df.empty:
+        print('DEBUG: dicom_df is empty after modality filter; returning empty dataframe')
+        return pd.DataFrame(columns=series_specific_columns + ['size'])
+
     group_df = dicom_df.groupby(series_specific_columns, as_index = False).size() # Group by these columns to get one row per series in the dataframe 
     group_df = group_df[group_df['size'] > 15] # Only keep series with at least 15 slices
-    filt_df = group_df[[filter_row(row) for index,row in group_df.iterrows()]] # Filter out series with contrast, non-axial slices, non-chest body part
-    select_df = filt_df.groupby('StudyName').apply(select_row).reset_index(drop=True) # Select series based on search term priorties calcium terms, cardiac terms, lung, chest etc
+    print('DEBUG: dicom_df shape:', dicom_df.shape)
+    print('DEBUG: dicom_df columns:', dicom_df.columns.tolist())
+    print('DEBUG: group_df shape:', group_df.shape)
+    print('DEBUG: group_df columns:', group_df.columns.tolist())
+    try:
+        print('DEBUG: group_df head:\n', group_df.head().to_string())
+    except Exception:
+        pass
+    mask = group_df.apply(filter_row, axis=1)
+    filt_df = group_df[mask] # Filter out series with contrast, non-axial slices, non-chest body part
+    print('DEBUG: filt_df shape:', filt_df.shape)
+    print('DEBUG: filt_df columns:', filt_df.columns.tolist())
+    try:
+        print('DEBUG: filt_df head:\n', filt_df.head().to_string())
+    except Exception:
+        pass
+    select_df = filt_df.groupby('StudyName', group_keys=False).apply(select_row).reset_index(drop=True) # Select series based on search term priorties calcium terms, cardiac terms, lung, chest etc
     one_series_per_study_df = pd.merge(dicom_df, select_df, on = series_specific_columns) # Expand selected series dataframe to now have rows for each slice (still only one series per study selected)
 
     one_series_per_study_df = keep_latest_series_if_repeated(one_series_per_study_df) # If series specific settings were repeated twice, keep the one with the latest timestamp 
