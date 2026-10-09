@@ -13,6 +13,7 @@ from monai.utils import set_determinism
 
 from processing import * 
 from visualization import * 
+from array_utils import center_crop_or_pad
 
 # Dynamic training of negative and positive slices 
 class CTChestDataset_dynamic(Dataset):
@@ -81,8 +82,7 @@ class CTChestDataset_dynamic(Dataset):
                 h, w, z = volume.shape
                 tmp = volume.squeeze()
                 tmp = zoom(tmp, self.zoom_factors)
-                resized_volume = np.zeros(self.new_shape, dtype=float)
-                resized_volume[:tmp.shape[0], :tmp.shape[1]] = tmp[:self.new_shape[0], :self.new_shape[1]]
+                resized_volume = center_crop_or_pad(tmp, self.new_shape, dtype=float)
                 resized_volume = np.expand_dims(resized_volume, axis=0)
                 batch_volumes[index] = resized_volume
                 
@@ -115,8 +115,7 @@ class CTChestDataset_dynamic(Dataset):
         
         tmp = volume.squeeze()
         tmp = zoom(tmp, zoom_factors)
-        resized_volume = np.zeros(self.new_shape, dtype=float)
-        resized_volume[:tmp.shape[0],:tmp.shape[1]] = tmp[:self.new_shape[0],:self.new_shape[1]]
+        resized_volume = center_crop_or_pad(tmp, self.new_shape, dtype=float)
 
         resized_volume = np.expand_dims(resized_volume, axis=0)
         hu_zoom_vol = resized_volume 
@@ -129,8 +128,7 @@ class CTChestDataset_dynamic(Dataset):
         label_slice = seg_vol[:,:,slice_iidx] #Need to check if this is correctly aligned     
 
         tmp2 = zoom(label_slice, zoom_factors, mode='nearest') 
-        resized_label = np.zeros(self.new_shape, dtype=int)
-        resized_label[:tmp2.shape[0],:tmp2.shape[1]] = tmp2[:self.new_shape[0],:self.new_shape[1]]
+        resized_label = center_crop_or_pad(tmp2, self.new_shape, dtype=int)
 
         resized_label = np.expand_dims(resized_label, axis=0)
 

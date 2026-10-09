@@ -10,6 +10,7 @@ from matplotlib.path import Path
 from torch.utils.data import Dataset
 
 from processing import * 
+from array_utils import center_crop_or_pad
 
 class CTChestDataset_nongated(Dataset):
     def __init__(self, study_ids, study_files, study_labels, transform=None, new_shape=(512, 512, 64), zoom_factors=(1, 1, 1)):
@@ -38,8 +39,7 @@ class CTChestDataset_nongated(Dataset):
         zoom_factors = self.zoom_factors
         tmp = volume
         tmp = zoom(tmp, zoom_factors) 
-        volume = np.zeros((new_shape[0],new_shape[1],tmp.shape[2]), dtype=float)
-        volume[:tmp.shape[0],:tmp.shape[1],:tmp.shape[2]] = tmp[:new_shape[0],:new_shape[1], :tmp.shape[2]] #Preserve Z-axis:new_shape[2]] #clean up
+        volume = center_crop_or_pad(tmp, new_shape[:2], dtype=float) # Preserve Z-axis
         volume = np.expand_dims(volume, axis=0)
         
         hu_zoom_vol = volume 
